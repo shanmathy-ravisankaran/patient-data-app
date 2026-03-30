@@ -78,7 +78,6 @@ function AuditTrail() {
                     <th>Timestamp</th>
                     <th>Created By</th>
                     <th>Facility</th>
-                    <th>Change History</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -97,7 +96,6 @@ function AuditTrail() {
                         <td>{group.summaryLog.timestamp}</td>
                         <td>{group.summaryLog.createdBy}</td>
                         <td>{group.summaryLog.facility}</td>
-                        <td>{group.summaryLog.changeHistory}</td>
                       </tr>
                       {group.detailRows.map((log) => (
                         <tr key={log.id} style={{ color: "#64748b" }}>
@@ -106,7 +104,6 @@ function AuditTrail() {
                           <td>{log.from}</td>
                           <td>{log.to}</td>
                           <td>{log.timestamp}</td>
-                          <td />
                           <td />
                           <td />
                         </tr>

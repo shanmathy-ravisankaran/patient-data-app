@@ -252,15 +252,6 @@ function PatientForm() {
   const errors = errorsFor(form, age, pinDetails, isDuplicateAbha);
   const isValid = Object.keys(errors).length === 0;
   const abhaVerified = isValidAbha && !isDuplicateAbha;
-  const disabledReasonKeys = Object.keys(errors);
-  const hasStartedForm = Object.values(form).some((value) => {
-    if (Array.isArray(value)) {
-      return value.length > 0;
-    }
-
-    return String(value).trim() !== "";
-  });
-
   const previousRecord = useMemo(() => {
     return [...patients].reverse().find((patient) =>
       patient.name?.trim().toLowerCase() === form.patientName.trim().toLowerCase() &&
@@ -519,7 +510,7 @@ function PatientForm() {
                     checked={form.whatsappConsent}
                     onChange={(e) => setField("whatsappConsent", e.target.checked)}
                   />
-                  <span>Patient consents to receive WhatsApp communication</span>
+                  <span>Receive WhatsApp communication</span>
                 </label>
                 <FieldError show={false} message="" />
               </div>
@@ -581,16 +572,11 @@ function PatientForm() {
             </div>
             {waistAlert && <p className="message message-error">{waistAlert}</p>}
           </section>
-          {!isValid && hasStartedForm && (
-            <p className="message message-error">
-              Save is blocked by: {disabledReasonKeys.join(", ")}
-            </p>
-          )}
           <button
             className="btn"
             onClick={savePatient}
             disabled={!isValid}
-            title={!isValid ? `Blocked by: ${Object.keys(errors).join(", ")}` : "Ready to save"}
+            title={!isValid ? "Complete the required fields to save" : "Ready to save"}
           >
             Save Patient
           </button>
