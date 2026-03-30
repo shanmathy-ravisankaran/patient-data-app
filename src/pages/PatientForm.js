@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { useAppStore } from "../store";
 import { isSupabaseConfigured, supabase } from "../supabaseClient";
@@ -145,12 +145,13 @@ function badgeStyle(label) {
   return map[label] || { background: "#e2e8f0", color: "#334155" };
 }
 
-function errorsFor(form, age, pinDetails) {
+function errorsFor(form, age, pinDetails, isDuplicateAbha) {
   const errors = {};
   const currentYear = new Date().getFullYear();
   const abhaDigits = form.abhaId.replace(/\D/g, "");
   if (!form.abhaId.trim()) errors.abhaId = "ABHA ID is required.";
   else if (abhaDigits.length !== 14 || !isValidLuhn(form.abhaId)) errors.abhaId = "Invalid ABHA ID";
+  else if (isDuplicateAbha) errors.abhaId = "Patient with this ABHA ID already exists";
   if (!form.patientName.trim()) errors.patientName = "Patient name is required.";
   else if (form.patientName.trim().length < 2) errors.patientName = "Patient name must be at least 2 characters.";
   else if (!/^[A-Za-z ]+$/.test(form.patientName.trim())) errors.patientName = "Patient name can contain only alphabets and spaces.";
@@ -234,6 +235,7 @@ function PatientForm() {
   const [form, setForm] = useState(initialForm);
   const [pinDetails, setPinDetails] = useState(null);
   const [touched, setTouched] = useState({});
+  const [isDuplicateAbha, setIsDuplicateAbha] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -246,9 +248,10 @@ function PatientForm() {
   const duration = durationYears(form.yearOfDiagnosis);
   const districts = getDistrictOptions(form.state);
   const oldTest = daysOld(form.testDate);
-  const errors = errorsFor(form, age, pinDetails);
+  const isValidAbha = form.abhaId.trim() !== "" && isValidLuhn(form.abhaId);
+  const errors = errorsFor(form, age, pinDetails, isDuplicateAbha);
   const isValid = Object.keys(errors).length === 0;
-  const abhaVerified = !errors.abhaId && form.abhaId.trim() !== "";
+  const abhaVerified = isValidAbha && !isDuplicateAbha;
   const disabledReasonKeys = Object.keys(errors);
   const hasStartedForm = Object.values(form).some((value) => {
     if (Array.isArray(value)) {
@@ -271,6 +274,53 @@ function PatientForm() {
   const hba1cAlert = form.hba1c !== "" && Number(form.hba1c) < 4 ? "Low HbA1C alert: the value is below 4.0%." : form.hba1c !== "" && Number(form.hba1c) > 14 ? "High Risk alert: the value is above 14.0%." : "";
   const bpAlert = Number(form.systolicBP) > 180 || Number(form.diastolicBP) > 110 ? "Blood pressure is in a critical range." : "";
   const waistAlert = form.waistCircumference && ((form.gender === "Male" && Number(form.waistCircumference) > 90) || (form.gender === "Female" && Number(form.waistCircumference) > 80)) ? "Waist circumference is above South Asian risk thresholds." : "";
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function checkAbhaDuplicate() {
+      if (!form.abhaId.trim() || !isValidAbha) {
+        if (isActive) {
+          setIsDuplicateAbha(false);
+        }
+        return;
+      }
+
+      const duplicateInState = patients.some(
+        (patient) => patient.abhaId === form.abhaId
+      );
+
+      if (duplicateInState) {
+        if (isActive) {
+          setIsDuplicateAbha(true);
+        }
+        return;
+      }
+
+      if (!isSupabaseConfigured) {
+        if (isActive) {
+          setIsDuplicateAbha(false);
+        }
+        return;
+      }
+
+      const { data, error: lookupError } = await supabase
+        .from("patients")
+        .select("id")
+        .eq("abha_id", form.abhaId)
+        .maybeSingle();
+
+      if (isActive) {
+        setIsDuplicateAbha(!lookupError && Boolean(data));
+      }
+    }
+
+    checkAbhaDuplicate();
+
+    return () => {
+      isActive = false;
+    };
+  }, [form.abhaId, isValidAbha, patients]);
 
   const setField = (field, value) => {
     setError("");
@@ -313,24 +363,9 @@ function PatientForm() {
     }
 
     const trimmedName = form.patientName.trim();
-    const duplicateAbha = patients.find((patient) => patient.abhaId === form.abhaId);
-
-    if (duplicateAbha) {
+    if (isDuplicateAbha) {
       setError("Patient with this ABHA ID already exists");
       return;
-    }
-
-    if (isSupabaseConfigured) {
-      const { data: existingAbha, error: abhaLookupError } = await supabase
-        .from("patients")
-        .select("id")
-        .eq("abha_id", form.abhaId)
-        .maybeSingle();
-
-      if (!abhaLookupError && existingAbha) {
-        setError("Patient with this ABHA ID already exists");
-        return;
-      }
     }
 
     const duplicate = patients.find((patient) => patient.name?.trim().toLowerCase() === trimmedName.toLowerCase() && Number(patient.age) === Number(age));
