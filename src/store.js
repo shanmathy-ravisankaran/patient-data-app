@@ -22,13 +22,16 @@ function readStorage(key, fallbackValue) {
 function formatAuditLog(row) {
   return {
     id: row.id,
-    action: "Patient Created",
+    action: row.action || "Patient Created",
     patientId: row.patient_id,
     patientAbhaId: row.patients?.abha_id || "",
     type: row.field_name,
     from: row.old_value,
     to: row.new_value,
-    timestamp: new Date(row.created_at).toLocaleString()
+    timestamp: new Date(row.created_at).toLocaleString(),
+    createdBy: row.created_by || "Admin",
+    facility: row.facility || "Clinic Name",
+    changeHistory: row.change_history || "Initial patient creation"
   };
 }
 
@@ -46,6 +49,7 @@ function buildAuditRows(patientId, patientRecord) {
     ["City", patientRecord.city],
     ["Taluk / Block", patientRecord.talukOrBlock || "--"],
     ["Village / Town", patientRecord.villageOrTown || "--"],
+    ["WhatsApp Consent", patientRecord.whatsappConsent ? "Yes" : "No"],
     ["Religion", patientRecord.religion || "--"],
     ["Category", patientRecord.category || "--"],
     ["Socioeconomic Class", patientRecord.socioeconomicClass || "--"],
@@ -174,14 +178,20 @@ export function AppProvider({ children }) {
 
     const isDuplicate = patients.some(
       (patient) =>
-        patient.name.trim().toLowerCase() === patientRecord.name.trim().toLowerCase() &&
-        Number(patient.age) === Number(patientRecord.age)
+        patient.abhaId === patientRecord.abhaId ||
+        (
+          patient.name.trim().toLowerCase() === patientRecord.name.trim().toLowerCase() &&
+          Number(patient.age) === Number(patientRecord.age)
+        )
     );
 
     if (isDuplicate) {
       return {
         success: false,
-        message: "A patient with the same name and age already exists."
+        message:
+          patients.some((patient) => patient.abhaId === patientRecord.abhaId)
+            ? "Patient with this ABHA ID already exists"
+            : "A patient with the same name and age already exists."
       };
     }
 

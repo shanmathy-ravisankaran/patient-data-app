@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
 import { useAppStore } from "../store";
+import { isSupabaseConfigured, supabase } from "../supabaseClient";
 import { getDistrictOptions, INDIA_STATES, lookupIndianPin } from "../helpers/indiaLocation";
 
 const METHODS = ["HPLC", "Immunoassay", "Point-of-Care", "Enzymatic", "Capillary Electrophoresis", "Other"];
@@ -17,12 +18,12 @@ const ALCOHOL = ["Never", "Occasional", "Regular", "Quit"];
 const RELIGIONS = ["Hindu", "Muslim", "Christian", "Sikh", "Buddhist", "Jain", "Other", "Not Disclosed"];
 const CATEGORIES = ["General", "OBC", "SC", "ST", "Other"];
 const SOCIOECONOMIC_CLASSES = ["BPL", "APL", "Kuppuswamy Scale I", "Kuppuswamy Scale II", "Kuppuswamy Scale III", "Kuppuswamy Scale IV", "Kuppuswamy Scale V"];
-const LANGUAGES = ["English", "Hindi", "Tamil", "Telugu", "Kannada", "Bengali", "Marathi", "Gujarati", "Malayalam", "Punjabi"];
+const LANGUAGES = ["Hindi", "English", "Tamil", "Telugu", "Kannada", "Malayalam", "Marathi", "Gujarati", "Bengali", "Punjabi", "Odia", "Assamese", "Urdu", "Sanskrit", "Konkani", "Maithili", "Manipuri", "Nepali", "Bodo", "Dogri", "Santhali", "Kashmiri"];
 
 const initialForm = {
   abhaId: "", patientName: "", dateOfBirth: "", gender: "", mobileNumber: "", aadhaarLast4: "",
   pinCode: "", state: "", district: "", city: "", talukOrBlock: "", villageOrTown: "",
-  religion: "", category: "", socioeconomicClass: "", preferredLanguage: "",
+  whatsappConsent: false, religion: "", category: "", socioeconomicClass: "", preferredLanguage: "",
   hba1c: "", testDate: "", testingMethod: "", labName: "", physicianName: "", nmcRegistrationId: "", fastingStatus: "",
   diabetesType: "", yearOfDiagnosis: "", treatmentModality: [], currentMedications: [], insulinRegimen: "",
   comorbidities: [], systolicBP: "", diastolicBP: "", heightCm: "", weightKg: "", waistCircumference: "",
@@ -30,6 +31,7 @@ const initialForm = {
 };
 
 const inputStyle = { width: "100%", padding: "12px 14px", border: "1px solid #dbe5f0", borderRadius: "12px", background: "#f8fafc", color: "#1f2937" };
+const inputWrapperStyle = { position: "relative" };
 const sectionStyle = { marginBottom: "24px", padding: "20px", border: "1px solid #dbe5f0", borderRadius: "16px", background: "#f8fafc" };
 const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" };
 
@@ -156,7 +158,7 @@ function errorsFor(form, age, pinDetails) {
   else if (age === "") errors.dateOfBirth = "Date of birth must be a valid past date.";
   else if (age < 0 || age > 120) errors.dateOfBirth = "Age must be between 0 and 120 years.";
   if (!form.gender) errors.gender = "Gender is required.";
-  if (!/^[6-9]\d{9}$/.test(form.mobileNumber)) errors.mobileNumber = "Enter a valid 10-digit Indian mobile number.";
+  if (!/^[6-9][0-9]{9}$/.test(form.mobileNumber)) errors.mobileNumber = "Enter valid 10-digit Indian mobile number";
   if (form.aadhaarLast4 && !/^\d{4}$/.test(form.aadhaarLast4)) errors.aadhaarLast4 = "Aadhaar must contain exactly 4 digits.";
   if (!/^\d{6}$/.test(form.pinCode)) errors.pinCode = "PIN code must contain exactly 6 digits.";
   else if (!pinDetails) errors.pinCode = "Enter a valid Indian PIN code.";
@@ -311,6 +313,26 @@ function PatientForm() {
     }
 
     const trimmedName = form.patientName.trim();
+    const duplicateAbha = patients.find((patient) => patient.abhaId === form.abhaId);
+
+    if (duplicateAbha) {
+      setError("Patient with this ABHA ID already exists");
+      return;
+    }
+
+    if (isSupabaseConfigured) {
+      const { data: existingAbha, error: abhaLookupError } = await supabase
+        .from("patients")
+        .select("id")
+        .eq("abha_id", form.abhaId)
+        .maybeSingle();
+
+      if (!abhaLookupError && existingAbha) {
+        setError("Patient with this ABHA ID already exists");
+        return;
+      }
+    }
+
     const duplicate = patients.find((patient) => patient.name?.trim().toLowerCase() === trimmedName.toLowerCase() && Number(patient.age) === Number(age));
     if (duplicate) {
       setError("A patient with the same name and age already exists.");
@@ -332,6 +354,7 @@ function PatientForm() {
       city: form.city,
       talukOrBlock: form.talukOrBlock,
       villageOrTown: form.villageOrTown,
+      whatsappConsent: form.whatsappConsent,
       religion: form.religion,
       category: form.category,
       socioeconomicClass: form.socioeconomicClass,
@@ -398,26 +421,39 @@ function PatientForm() {
             <div style={gridStyle}>
               <div className="form-group">
                 <FieldLabel htmlFor="abha-id" text="ABHA ID" required />
-                <input
-                  id="abha-id"
-                  value={form.abhaId}
-                  onChange={(e) => {
-                    markTouched("abhaId");
-                    setField("abhaId", formatAbhaId(e.target.value));
-                  }}
-                  onBlur={() => markTouched("abhaId")}
-                  placeholder="1234-1234-1234-12"
-                  style={{
-                    ...inputStyle,
-                    borderColor: (showErrors || touched.abhaId) && errors.abhaId ? "#dc2626" : "#dbe5f0"
-                  }}
-                />
+                <div style={inputWrapperStyle}>
+                  <input
+                    id="abha-id"
+                    value={form.abhaId}
+                    onChange={(e) => {
+                      markTouched("abhaId");
+                      setField("abhaId", formatAbhaId(e.target.value));
+                    }}
+                    onBlur={() => markTouched("abhaId")}
+                    placeholder="1234-1234-1234-12"
+                    style={{
+                      ...inputStyle,
+                      paddingRight: abhaVerified ? "42px" : "14px",
+                      borderColor: (showErrors || touched.abhaId) && errors.abhaId ? "#dc2626" : "#dbe5f0"
+                    }}
+                  />
+                  {abhaVerified && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: "50%",
+                        right: "14px",
+                        transform: "translateY(-50%)",
+                        color: "#16a34a",
+                        fontSize: "18px",
+                        fontWeight: 700
+                      }}
+                    >
+                      ✓
+                    </span>
+                  )}
+                </div>
                 <FieldError show={showErrors || touched.abhaId} message={errors.abhaId} />
-                {abhaVerified && (
-                  <p className="message message-success" style={{ marginTop: "8px", padding: "8px 12px" }}>
-                    ABHA ID verified
-                  </p>
-                )}
               </div>
               <div className="form-group"><FieldLabel htmlFor="patient-name" text="Patient Name" required /><input id="patient-name" value={form.patientName} onChange={(e) => setField("patientName", e.target.value)} placeholder="Enter patient name" style={{ ...inputStyle, borderColor: showErrors && errors.patientName ? "#dc2626" : "#dbe5f0" }} /><FieldError show={showErrors} message={errors.patientName} /></div>
               <div className="form-group"><FieldLabel htmlFor="dob" text="Date of Birth" required /><input id="dob" type="date" max={new Date().toISOString().split("T")[0]} value={form.dateOfBirth} onChange={(e) => setField("dateOfBirth", e.target.value)} style={{ ...inputStyle, borderColor: showErrors && errors.dateOfBirth ? "#dc2626" : "#dbe5f0" }} /><FieldError show={showErrors} message={errors.dateOfBirth} /></div>
@@ -437,6 +473,21 @@ function PatientForm() {
               <div className="form-group"><FieldLabel htmlFor="city" text="City" /><input id="city" value={form.city} onChange={(e) => setField("city", e.target.value)} placeholder="Auto-filled from PIN, editable" style={inputStyle} /></div>
               <div className="form-group"><FieldLabel htmlFor="taluk" text="Taluk / Block" /><input id="taluk" value={form.talukOrBlock} onChange={(e) => setField("talukOrBlock", e.target.value)} placeholder="Optional" style={inputStyle} /></div>
               <div className="form-group"><FieldLabel htmlFor="village" text="Village / Town" /><input id="village" value={form.villageOrTown} onChange={(e) => setField("villageOrTown", e.target.value)} placeholder="Optional" style={inputStyle} /></div>
+              <div className="form-group" style={{ justifyContent: "center" }}>
+                <label
+                  htmlFor="whatsapp-consent"
+                  style={{ display: "flex", alignItems: "center", gap: "10px", fontWeight: 500 }}
+                >
+                  <input
+                    id="whatsapp-consent"
+                    type="checkbox"
+                    checked={form.whatsappConsent}
+                    onChange={(e) => setField("whatsappConsent", e.target.checked)}
+                  />
+                  <span>Patient consents to receive WhatsApp communication</span>
+                </label>
+                <FieldError show={false} message="" />
+              </div>
               <div className="form-group"><FieldLabel htmlFor="religion" text="Religion" /><select id="religion" value={form.religion} onChange={(e) => setField("religion", e.target.value)} style={inputStyle}><option value="">Select religion</option>{RELIGIONS.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
               <div className="form-group"><FieldLabel htmlFor="category" text="Category" /><select id="category" value={form.category} onChange={(e) => setField("category", e.target.value)} style={inputStyle}><option value="">Select category</option>{CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
               <div className="form-group"><FieldLabel htmlFor="socioeconomic-class" text="Socioeconomic Class" /><select id="socioeconomic-class" value={form.socioeconomicClass} onChange={(e) => setField("socioeconomicClass", e.target.value)} style={inputStyle}><option value="">Select socioeconomic class</option>{SOCIOECONOMIC_CLASSES.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
